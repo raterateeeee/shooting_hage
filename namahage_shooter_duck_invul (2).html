@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <title>👩 vs 🧑‍🦲 — STG（無敵🦆 & 調整）</title>
+  <style>
+    :root { --ui-bg: rgba(0,0,0,.55); --ui-txt: #fff; }
+    html, body {
+      margin: 0; height: 100%; background: #0b1020; color: var(--ui-txt);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Color Emoji",
+                   "Apple Color Emoji", "Segoe UI Emoji", "Noto Emoji", sans-serif;
+      touch-action: none; -webkit-user-select: none; user-select: none;
+    }
+    #wrap { position: fixed; inset: 0; display: grid; grid-template-rows: auto 1fr; }
+    #hud {
+      display:flex; align-items:center; justify-content:space-between; gap:.75rem;
+      padding:.5rem .75rem; background: var(--ui-bg); backdrop-filter: blur(6px);
+      z-index:10;
+    }
+    #hud .g { display:flex; align-items:center; gap:.6rem; }
+    #score { font-weight:700; letter-spacing:.5px; }
+    #hearts { font-size:1.1rem; }
+    #btns button {
+      appearance:none; border:1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.1);
+      color:#fff; padding:.35rem .6rem; border-radius:.75rem; font-weight:600;
+    }
+    canvas { width: 100%; height: 100%; display:block; background:#0b1020; }
+    .ov { position:absolute; inset:0; display:grid; place-items:center; z-index:20; }
+    .panel {
+      background: var(--ui-bg); backdrop-filter: blur(8px);
+      border:1px solid rgba(255,255,255,.15); border-radius:1rem;
+      padding:1rem 1.2rem; width:min(92vw,520px); box-shadow:0 10px 30px rgba(0,0,0,.4);
+    }
+    .panel h1 { margin:.2rem 0 .5rem; font-size:1.1rem; }
+    .panel p { margin:.25rem 0; opacity:.9; }
+    .panel .cta { margin-top:.75rem; text-align:center; }
+    .panel .cta button {
+      font-size:1.05rem; padding:.6rem 1rem; border-radius:.9rem; border:none; color:#061018;
+      background:linear-gradient(180deg,#7fe0ff,#46b3ff 60%,#2c89ff); font-weight:800; letter-spacing:.4px;
+    }
+    .small { font-size:.85rem; opacity:.8; }
+    #bossbar { position:absolute; top:48px; left:50%; transform:translateX(-50%); z-index:12;
+      width:min(92vw,520px); height:18px; border:1px solid rgba(255,120,120,.7);
+      background: rgba(120,0,0,.35); border-radius:10px; overflow:hidden; display:none; }
+    #bossbar .fill { height:100%; width:100%; background: linear-gradient(90deg,#ff3b3b,#ff7a7a);
+      box-shadow: 0 0 14px rgba(255,60,60,.7) inset; }
+    #bossbar .label { position:absolute; inset:0; display:grid; place-items:center;
+      font-size:12px; font-weight:700; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.8); }
+    #toast { position:absolute; top:85px; left:50%; transform:translateX(-50%);
+      background: rgba(0,0,0,.5); border:1px solid rgba(255,255,255,.25);
+      padding:.35rem .7rem; border-radius:.6rem; font-weight:700; display:none; z-index:12; }
+    #buffs { position:absolute; top:48px; right:10px; z-index:12; display:flex; gap:.35rem; align-items:center; }
+    #buffs .chip { display:inline-flex; align-items:center; gap:.25rem;
+      background: rgba(0,0,0,.38); border:1px solid rgba(255,255,255,.2); border-radius:.6rem;
+      padding:.15rem .4rem; font-size:.85rem; }
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <div id="hud">
+      <div class="g"><span>👩</span><span id="score">SCORE 0</span></div>
+      <div class="g"><span id="hearts">❤️❤️❤️❤️</span></div>
+      <div id="btns" class="g">
+        <button id="pauseBtn" aria-label="一時停止/再開">⏸︎</button>
+        <button id="resetBtn" aria-label="リセット">↺</button>
+      </div>
+    </div>
+    <div id="bossbar"><div class="fill"></div><div class="label">BOSS HP</div></div>
+    <div id="toast">STAGE 2</div>
+    <div id="buffs"></div>
+    <canvas id="cv"></canvas>
+
+    <div id="startOv" class="ov">
+      <div class="panel">
+        <h1>👩 vs 🧑‍🦲 縦スクSTG（🦆無敵アイテム追加）</h1>
+        <p>操作：相対ドラッグで左右。攻撃は<b>👹</b>自動連射。</p>
+        <p>パワーアップ：<b>🌺</b>（発光）＝火力UP、<b>🦆</b>（青く発光）＝一定時間<b>無敵</b>。</p>
+        <p>各面<b>45秒</b>で巨大赤オーラ<b>👴</b>出現。HPバー表示。</p>
+        <div class="cta"><button id="startBtn">タップで開始</button></div>
+      </div>
+    </div>
+
+    <div id="overOv" class="ov" style="display:none">
+      <div class="panel">
+        <h1>GAME OVER</h1>
+        <p id="finalScore">SCORE 0</p>
+        <p id="bestScore" class="small">BEST 0</p>
+        <div class="cta"><button id="retryBtn">もう一度</button></div>
+      </div>
+    </div>
+
+    <div id="clearOv" class="ov" style="display:none">
+      <div class="panel">
+        <h1>ALL CLEAR ✨</h1>
+        <p id="clearScore">SCORE 0</p>
+        <div class="cta"><button id="againBtn">もう一回</button></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(()=>{
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
+  const scoreEl = document.getElementById('score');
+  const heartsEl = document.getElementById('hearts');
+  const buffsEl = document.getElementById('buffs');
+  const startOv = document.getElementById('startOv');
+  const overOv = document.getElementById('overOv');
+  const clearOv = document.getElementById('clearOv');
+  const finalScoreEl = document.getElementById('finalScore');
+  const bestScoreEl = document.getElementById('bestScore');
+  const clearScoreEl = document.getElementById('clearScore');
+  const startBtn = document.getElementById('startBtn');
+  const retryBtn = document.getElementById('retryBtn');
+  const againBtn = document.getElementById('againBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const bossBar = document.getElementById('bossbar');
+  const bossFill = bossBar.querySelector('.fill');
+  const bossLabel = bossBar.querySelector('.label');
+  const toast = document.getElementById('toast');
+
+  const DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+  let W=0,H=0, t=0, last=0, raf;
+  const STATE = { title:0, playing:1, paused:2, over:3, clear:4 };
+  let state = STATE.title;
+
+  // Tunables
+  const HIT_IFR = 1.5;            // 被弾後の無敵時間（秒）
+  const POWER_MS = 5000;          // 🌺の効果（ms）
+  const SHIELD_MS = 5000;         // 🦆の効果（ms）
+  const BOSS_TIME = 45;           // ボス出現（秒）
+  const MAX_HP = 6;
+
+  const EMOJI = {
+    player:'👩', enemy:['👴','👩‍🦲','👨‍🦲'], pBullet:'👹', eBullet:'✨', power:'🌺', shield:'🦆', boss:'👴'
+  };
+
+  const world = { speed:120, difficulty:1, score:0, best:Number(localStorage.getItem('stg_best')||0) };
+  const player = { x:0, y:0, r:22, hp:4, ifr:0, fireCd:0, fireBase:0.22, powerMs:0, shieldMs:0 };
+
+  const enemies=[], bullets=[], ebullets=[], particles=[], items=[];
+  let boss=null; let stage=1, timeSinceStage=0, stageTransition=0;
+  const R=(a,b)=>a+Math.random()*(b-a); const RI=(a,b)=>(a+Math.floor(Math.random()*((b-a)+1)));
+
+  function resize(){
+    const cw = window.innerWidth, ch = window.innerHeight;
+    cv.style.width = cw+'px'; cv.style.height = ch+'px';
+    cv.width = Math.floor(cw*DPR); cv.height = Math.floor(ch*DPR);
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+    W=cw; H=ch; ctx.textAlign='center'; ctx.textBaseline='middle';
+  }
+  addEventListener('resize', resize, {passive:true}); resize();
+
+  function updateHearts(){
+    const full = '❤️'.repeat(player.hp);
+    const rest = Math.max(0, 4 - player.hp); // 基準表示は4つ
+    heartsEl.textContent = full + '🖤'.repeat(rest);
+  }
+  function updateScore(){ scoreEl.textContent = 'SCORE '+world.score; }
+
+  function updateBuffChips(){
+    buffsEl.innerHTML = '';
+    if(player.powerMs>0){
+      const chip = document.createElement('div'); chip.className='chip';
+      chip.textContent = '🌺 '+Math.ceil(player.powerMs/1000)+'s';
+      buffsEl.appendChild(chip);
+    }
+    if(player.shieldMs>0){
+      const chip = document.createElement('div'); chip.className='chip';
+      chip.textContent = '🦆 '+Math.ceil(player.shieldMs/1000)+'s';
+      buffsEl.appendChild(chip);
+    }
+  }
+
+  function reset(){
+    world.score=0; world.difficulty=1; world.speed=120;
+    player.x=W/2; player.y=H*0.82; player.hp=4; player.ifr=0; player.fireCd=0; player.powerMs=0; player.shieldMs=0;
+    enemies.length=0; bullets.length=0; ebullets.length=0; particles.length=0; items.length=0; boss=null;
+    bossBar.style.display='none'; stage=1; timeSinceStage=0; stageTransition=0;
+    updateHearts(); updateScore(); updateBuffChips(); t=0; last=performance.now();
+    itemTimer = 5.25; shieldTimer = 9.0; // 初期値
+  }
+
+  // Controls (relative)
+  let dragging=false, lastTouchX=null;
+  function onPointer(e){
+    const p = e.touches? e.touches[0] : e;
+    if(state===STATE.playing){
+      if(lastTouchX==null) lastTouchX = p.clientX;
+      const dx = p.clientX - lastTouchX;
+      player.x += dx * 0.9;
+      player.x = Math.max(24, Math.min(W-24, player.x));
+      lastTouchX = p.clientX;
+    }
+  }
+  cv.addEventListener('pointerdown', e=>{ dragging=true; lastTouchX=null; onPointer(e); });
+  cv.addEventListener('pointermove', e=>{ if(dragging) onPointer(e); });
+  addEventListener('pointerup', ()=>{ dragging=false; lastTouchX=null; });
+
+  // Background
+  const stars = Array.from({length:50},()=>({x:Math.random(), y:Math.random(), s:R(0.6,1.6)}));
+  function drawBg(dt){
+    ctx.fillStyle='#0b1020'; ctx.fillRect(0,0,W,H);
+    ctx.globalAlpha = 0.9; ctx.fillStyle='#10223a';
+    for(const s of stars){ s.y += (world.speed*0.3*dt*s.s)/H; if(s.y>1) s.y-=1;
+      ctx.beginPath(); ctx.arc(s.x*W, s.y*H, 1.2*s.s, 0, Math.PI*2); ctx.fill(); }
+    ctx.globalAlpha=1;
+  }
+
+  // Spawns
+  let spawnTimer=0, itemTimer=5.25, shieldTimer=12;
+  function spawnEnemy(){
+    enemies.push({ x:R(30,W-30), y:-40, r:24, vx:R(-20,20), vy:R(70,110)+world.difficulty*8,
+                   hp:2+Math.floor(world.difficulty*0.3), fireCd:R(0.5,1.3), emoji:EMOJI.enemy[RI(0,2)] });
+  }
+  function spawnPower(){ items.push({ x:R(30,W-30), y:-30, r:18, vy:R(60,90), kind:'power' }); }
+  function spawnShield(){ items.push({ x:R(30,W-30), y:-30, r:20, vy:R(60,90), kind:'shield' }); }
+
+  function fire(x,y,vx,vy,from,extra={}){ bullets.push({x,y,vx,vy,r: from==='p'?18:16, from, ...extra}); }
+  function fireEnemy(x,y,vx,vy){ ebullets.push({x,y,vx,vy,r:16}); }
+  function boom(x,y){ for(let i=0;i<10;i++) particles.push({x,y, vx:R(-80,80), vy:R(-120,0), t:0, life:R(0.3,0.6)}); }
+  const hit=(a,b)=>{ const dx=a.x-b.x, dy=a.y-b.y; const rr=(a.r+b.r); return dx*dx+dy*dy<=rr*rr; };
+  function drawEmoji(ch, x,y, size){ ctx.font = `${size}px "Noto Color Emoji","Apple Color Emoji","Segoe UI Emoji","Noto Emoji",sans-serif`; ctx.fillText(ch,x,y+2); }
+
+  // Boss params (size doubled; HP is 2/3 of earlier 260/380)
+  function bossParamsFor(stage){
+    if(stage===1) return { hp:174, vx:80, vy:90, aimCD:0.7, burstCD:2.6, burstN:12, aimSp:230, burstSp:180, size:128 };
+    return { hp:254, vx:110, vy:110, aimCD:0.55, burstCD:2.1, burstN:16, aimSp:270, burstSp:220, size:144 };
+  }
+
+  function spawnBoss(){
+    const p = bossParamsFor(stage);
+    boss = { x:W/2, y:-p.size*1.2, r:p.size*0.62, hp:p.hp, maxHp:p.hp, vx:p.vx, vy:p.vy,
+             aimCD:p.aimCD, burstCD:p.burstCD, burstN:p.burstN, aimSp:p.aimSp, burstSp:p.burstSp, fireT:0, burstT:0, size:p.size };
+    bossBar.style.display='block'; updateBossBar();
+  }
+  function updateBossBar(){
+    if(!boss){ bossBar.style.display='none'; return; }
+    const ratio = Math.max(0, boss.hp / boss.maxHp);
+    bossFill.style.width = (ratio*100)+'%';
+    bossLabel.textContent = `BOSS HP ${Math.ceil(boss.hp)}/${boss.maxHp}  (STAGE ${stage})`;
+  }
+
+  function showToast(msg, ms=1500){
+    toast.textContent = msg;
+    toast.style.display='block';
+    setTimeout(()=>{ toast.style.display='none'; }, ms);
+  }
+
+  function startStage(n){
+    stage = n; timeSinceStage = 0; stageTransition = 0; boss = null;
+    enemies.length=0; bullets.length=0; ebullets.length=0; items.length=0;
+    if(stage===2){
+      player.hp = Math.min(player.hp+1, MAX_HP); updateHearts(); showToast('STAGE 2', 1600);
+    }
+  }
+
+  function step(ts){
+    raf = requestAnimationFrame(step);
+    const now = ts || performance.now();
+    const dt = Math.min(0.033, (now-last)/1000); last=now; t+=dt;
+    if(state!==STATE.playing) return;
+
+    if(stageTransition>0){ stageTransition -= dt; } else { timeSinceStage += dt; }
+
+    world.difficulty += dt*0.2;
+    world.speed = 120 + world.difficulty*20;
+    drawBg(dt);
+
+    // Boss trigger at 45s per stage
+    if(!boss && stageTransition<=0 && timeSinceStage>BOSS_TIME){ spawnBoss(); }
+
+    // Items spawn (🌺 reduced rate remains; 🦆 rarer)
+    itemTimer -= dt; shieldTimer -= dt;
+    if(itemTimer<=0){ spawnPower(); itemTimer = R(5.25, 9.75); }
+    if(shieldTimer<=0){ spawnShield(); shieldTimer = R(12, 18); }
+
+    // Player timers
+    if(player.powerMs>0) player.powerMs = Math.max(0, player.powerMs - dt*1000);
+    if(player.shieldMs>0) player.shieldMs = Math.max(0, player.shieldMs - dt*1000);
+    if(player.ifr>0) player.ifr = Math.max(0, player.ifr - dt);
+    updateBuffChips();
+
+    // Player fire
+    player.fireCd -= dt;
+    const powered = player.powerMs>0;
+    if(player.fireCd<=0){
+      if(powered){
+        fire(player.x-14, player.y-28, 0, -420, 'p', {glow:true, dmg:2});
+        fire(player.x+14, player.y-28, 0, -420, 'p', {glow:true, dmg:2});
+        player.fireCd = Math.max(0.08, (player.fireBase - world.difficulty*0.01)*0.7);
+      }else{
+        fire(player.x, player.y-28, 0, -360, 'p', {glow:false, dmg:1});
+        player.fireCd = Math.max(0.12, player.fireBase - world.difficulty*0.01);
+      }
+    }
+
+    // Enemies (pause when boss exists)
+    if(!boss){
+      spawnTimer -= dt;
+      if(spawnTimer<=0){ spawnEnemy(); spawnTimer = Math.max(0.35, 1.1 - world.difficulty*0.08); }
+      for(let i=enemies.length-1;i>=0;i--){
+        const e=enemies[i];
+        e.x+=e.vx*dt; e.y+=e.vy*dt; if(e.x<22||e.x>W-22) e.vx*=-1;
+        e.fireCd -= dt;
+        if(e.fireCd<=0){ ebullets.push({x:e.x,y:e.y+16,vx:0,vy:R(140,220)+world.difficulty*12,r:16}); e.fireCd = R(0.9,1.6) - world.difficulty*0.03; }
+        if(e.y>H+60){ enemies.splice(i,1); }
+      }
+    }
+
+    // Boss logic
+    if(boss){
+      const targetY = H*0.22;
+      if(boss.y < targetY){ boss.y += boss.vy*dt; if(boss.y>targetY) boss.y=targetY; }
+      boss.x += boss.vx*dt;
+      if(boss.x < 40 || boss.x > W-40) boss.vx *= -1;
+      boss.fireT -= dt; boss.burstT -= dt;
+      // aimed
+      if(boss.fireT<=0){
+        const dx = player.x - boss.x, dy = (player.y - boss.y);
+        const len = Math.hypot(dx,dy) || 1;
+        ebullets.push({x:boss.x,y:boss.y+22, vx:dx/len*boss.aimSp, vy:dy/len*boss.aimSp, r:16});
+        boss.fireT = boss.aimCD;
+      }
+      // radial
+      if(boss.burstT<=0){
+        const n = boss.burstN, sp = boss.burstSp;
+        const offset = (t*2)%(Math.PI*2) * (stage===2? 0.5: 0.25);
+        for(let k=0;k<n;k++){
+          const a = (Math.PI*2) * (k/n) + offset;
+          ebullets.push({x:boss.x,y:boss.y+20, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, r:16});
+        }
+        boss.burstT = boss.burstCD;
+      }
+    }
+
+    // Move bullets
+    for(let i=ebullets.length-1;i>=0;i--){
+      const b=ebullets[i]; b.x+=b.vx*dt; b.y+=b.vy*dt;
+      if(b.y>H+80||b.y<-80||b.x<-80||b.x>W+80){ ebullets.splice(i,1); }
+    }
+    for(let i=bullets.length-1;i>=0;i--){
+      const b=bullets[i]; b.x+=b.vx*dt; b.y+=b.vy*dt;
+      if(b.y<-80||b.y>H+80||b.x<-80||b.x>W+80){ bullets.splice(i,1); }
+    }
+
+    // Collisions: p bullets vs enemies
+    for(let i=enemies.length-1;i>=0;i--){
+      const e=enemies[i];
+      for(let j=bullets.length-1;j>=0;j--){
+        const b=bullets[j]; if(b.from!=='p') continue;
+        if(hit({x:e.x,y:e.y,r:e.r*0.9}, b)){
+          bullets.splice(j,1); e.hp -= (b.dmg||1);
+          if(e.hp<=0){ enemies.splice(i,1); boom(e.x,e.y); world.score+=10; updateScore(); }
+          break;
+        }
+      }
+    }
+
+    // Collisions: p bullets vs boss
+    if(boss){
+      for(let j=bullets.length-1;j>=0;j--){
+        const b=bullets[j]; if(b.from!=='p') continue;
+        if(hit({x:boss.x,y:boss.y,r:boss.r*1.05}, b)){
+          bullets.splice(j,1); boss.hp -= (b.dmg||1); updateBossBar();
+          if(boss.hp<=0){
+            boom(boss.x,boss.y);
+            boss=null; bossBar.style.display='none';
+            if(stage===1){ stageTransition = 2.0; startStage(2); }
+            else{ state=STATE.clear; cancelAnimationFrame(raf); clearScoreEl.textContent = 'SCORE '+world.score; clearOv.style.display=''; }
+          }
+        }
+      }
+    }
+
+    // Enemy bullets -> player (respect shield/ifr)
+    const invul = (player.shieldMs>0 || player.ifr>0);
+    if(!invul){
+      for(let i=ebullets.length-1;i>=0;i--){
+        const b=ebullets[i];
+        if(hit({x:player.x,y:player.y,r:player.r*0.85}, b)){
+          ebullets.splice(i,1);
+          player.hp = Math.max(0, player.hp-1); updateHearts();
+          player.ifr = HIT_IFR;
+          if(player.hp<=0){ return gameOver(); }
+        }
+      }
+    }else{
+      // かすった弾は消す（ほんの少し吸収感）
+      for(let i=ebullets.length-1;i>=0;i--){
+        const b=ebullets[i];
+        if(hit({x:player.x,y:player.y,r:player.r*0.72}, b)){ ebullets.splice(i,1); }
+      }
+    }
+
+    // Items
+    for(let i=items.length-1;i>=0;i--){
+      const it=items[i]; it.y += 80*dt;
+      if(hit({x:player.x,y:player.y,r:player.r}, {x:it.x,y:it.y,r:it.r})){
+        items.splice(i,1);
+        if(it.kind==='power'){ player.powerMs = POWER_MS; }
+        else if(it.kind==='shield'){ player.shieldMs = SHIELD_MS; player.ifr = 0; }
+      }else if(it.y>H+50){ items.splice(i,1); }
+    }
+
+    // Draw enemies
+    for(const e of enemies){
+      const tw = (Math.sin(t*12)+1)*0.5;
+      ctx.save(); if(e.fireCd<0.2){ ctx.globalAlpha = 0.6 + 0.4*tw; }
+      drawEmoji(e.emoji, e.x, e.y, 40); ctx.restore();
+    }
+
+    // Draw boss (red aura)
+    if(boss){
+      ctx.save();
+      ctx.shadowColor='rgba(255,60,60,.95)'; ctx.shadowBlur=25;
+      drawEmoji(EMOJI.boss, boss.x, boss.y, boss.size);
+      ctx.restore();
+    }
+
+    // Draw bullets
+    for(const b of bullets){
+      const glowOn = (b.glow || player.powerMs>0) && b.from==='p';
+      if(glowOn){ ctx.save(); ctx.shadowColor='yellow'; ctx.shadowBlur=18; }
+      drawEmoji(b.from==='p'? EMOJI.pBullet : EMOJI.eBullet, b.x, b.y, b.from==='p'?28:24);
+      if(glowOn){ ctx.restore(); }
+    }
+    for(const b of ebullets){ drawEmoji(EMOJI.eBullet, b.x, b.y, 24); }
+
+    // Particles
+    for(let i=particles.length-1;i>=0;i--){
+      const p=particles[i]; p.t+=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=120*dt;
+      const a=1-p.t/p.life; if(a<=0){ particles.splice(i,1); continue; }
+      ctx.globalAlpha = Math.max(0,a);
+      ctx.fillStyle='#7fe0ff'; ctx.beginPath(); ctx.arc(p.x,p.y,2,0,Math.PI*2); ctx.fill(); ctx.globalAlpha=1;
+    }
+
+    // Items draw: 🌺 (yellow aura), 🦆 (blue aura)
+    for(const it of items){
+      ctx.save();
+      if(it.kind==='power'){ ctx.strokeStyle='rgba(255,230,0,.95)'; ctx.shadowColor='rgba(255,230,0,.9)'; }
+      else { ctx.strokeStyle='rgba(100,170,255,.95)'; ctx.shadowColor='rgba(100,170,255,.9)'; }
+      ctx.lineWidth=3; ctx.shadowBlur=12;
+      ctx.beginPath(); ctx.arc(it.x,it.y,it.r+6,0,Math.PI*2); ctx.stroke();
+      ctx.shadowBlur=0; drawEmoji(it.kind==='power'? EMOJI.power : EMOJI.shield, it.x, it.y, it.kind==='power'?26:28);
+      ctx.restore();
+    }
+
+    // Player (glow blue when shielded)
+    const blink = player.ifr>0 && Math.floor(t*20)%2===0;
+    if(player.shieldMs>0){
+      ctx.save(); ctx.shadowColor='rgba(120,180,255,.95)'; ctx.shadowBlur=18;
+      drawEmoji(EMOJI.player, player.x, player.y, 42);
+      ctx.restore();
+    } else if(!blink){
+      drawEmoji(EMOJI.player, player.x, player.y, 42);
+    }
+  }
+
+  function loop(){ last = performance.now(); raf = requestAnimationFrame(step); }
+
+  function start(){
+    reset(); state=STATE.playing; startOv.style.display='none'; overOv.style.display='none'; clearOv.style.display='none'; loop();
+  }
+  function gameOver(){
+    state=STATE.over; cancelAnimationFrame(raf);
+    world.best = Math.max(world.best, world.score);
+    localStorage.setItem('stg_best', world.best);
+    finalScoreEl.textContent = 'SCORE '+world.score;
+    bestScoreEl.textContent = 'BEST '+world.best;
+    overOv.style.display='';
+  }
+
+  // UI
+  startBtn.addEventListener('click', ()=>start(), {passive:true});
+  retryBtn?.addEventListener('click', ()=>start(), {passive:true});
+  againBtn?.addEventListener('click', ()=>start(), {passive:true});
+  resetBtn.addEventListener('click', ()=>{ if(state===STATE.playing||state===STATE.paused){ start(); }}, {passive:true});
+  pauseBtn.addEventListener('click', ()=>{
+    if(state===STATE.playing){ state=STATE.paused; pauseBtn.textContent='▶'; }
+    else if(state===STATE.paused){ state=STATE.playing; last=performance.now(); pauseBtn.textContent='⏸︎'; }
+  }, {passive:true});
+
+  // Title idle
+  function idle(){
+    if(state!==STATE.title) return;
+    requestAnimationFrame(idle);
+    const dt = 1/60; drawBg(dt);
+    ctx.globalAlpha=.85; drawEmoji(EMOJI.player, W/2, H*0.78, 42); ctx.globalAlpha=1;
+  }
+  idle();
+})();
+</script>
+</body>
+</html>
