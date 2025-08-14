@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no"/>
-<title>👩 vs 🧑‍🦲 — STG（3ステージ／演出多め／星背景・ボス中ザコ停止）</title>
+<title>👩 vs 🧑‍🦲 — STG（3ステージ／演出多め／星背景・ボス中ザコ停止・レーザー）</title>
 <style>
 :root{--ui:rgba(0,0,0,.55);--txt:#fff}
 html,body{margin:0;height:100%;background:#0b1020;color:var(--txt);
@@ -55,7 +55,7 @@ canvas{width:100%;height:100%;display:block;background:#000}
       <p>操作：相対ドラッグで左右。攻撃は<b>👹</b>自動連射。</p>
       <p>アイテム：<b>🌺</b>=火力UP、<b>🦆</b>=無敵（青グロー）、<b>❤️</b>=HP+1。</p>
       <p>各面<b>45秒</b>で巨大赤オーラ<b>👴</b>出現。倒すと次面、<b>HP満タン</b>で再開。3面クリアでGAME COMPLETE。</p>
-      <div class="cta"><button id="startBtn">タップで開始</button></div>
+      <div class="cta"><button id="startBtn">タップで開始（画面タップでもOK）</button></div>
     </div>
   </div>
 
@@ -138,9 +138,25 @@ const player={x:0,y:0,r:22,hp:MAX_HP,ifr:0,fireCd:0,fireBase:0.22,powerMs:0,shie
 const enemies=[], bullets=[], ebullets=[], particles=[], items=[];
 let boss=null, stage=1, timeSinceStage=0, stageTransition=0, slowMo=0, shake=0;
 
-// ====== ユーティリティ／描画 ======
-const R=(a,b)=>a+Math.random()*(b-a);
-const RI=(a,b)=>(a+Math.floor(Math.random()*((b-a)+1)));
+// ====== 星背景 ======
+const starsFar = Array.from({length:70},()=>({x:Math.random(), y:Math.random(), s:rand(0.4,1.0)}));
+const starsNear= Array.from({length:55},()=>({x:Math.random(), y:Math.random(), s:rand(1.0,1.8)}));
+function drawBg(dt){
+  ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H);
+  ctx.globalAlpha=0.7; ctx.fillStyle='#0e2340';
+  for(const s of starsFar){ s.y += (world.speed*0.12*dt*s.s)/H; if(s.y>1) s.y-=1;
+    circle(s.x*W,s.y*H,1.0*s.s,'fill'); }
+  ctx.fillStyle='#cfe0ff';
+  for(const s of starsNear){ s.y += (world.speed*0.28*dt*s.s)/H; if(s.y>1) s.y-=1;
+    const tw = 0.65 + 0.35*Math.sin((t*6)+(s.x*17));
+    ctx.globalAlpha = 0.75*tw; circle(s.x*W,s.y*H,1.4*s.s,'fill'); }
+  ctx.globalAlpha=1;
+}
+
+// ====== 便利関数 ======
+function circle(x,y,r,mode){ ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); mode==='fill'?ctx.fill():ctx.stroke(); }
+const rand=(a,b)=>a+Math.random()*(b-a);
+const randi=(a,b)=>(a+Math.floor(Math.random()*((b-a)+1)));
 const hit=(a,b)=>{const dx=a.x-b.x,dy=a.y-b.y;const rr=(a.r+b.r);return dx*dx+dy*dy<=rr*rr;};
 function drawEmoji(ch,x,y,size){ctx.font=`${size}px "Noto Color Emoji","Apple Color Emoji","Segoe UI Emoji","Noto Emoji",sans-serif`;ctx.fillText(ch,x,y+2);}
 
@@ -162,7 +178,16 @@ function updateBuffs(){
   if(player.shieldMs>0){const c=document.createElement('div');c.className='chip';c.textContent='🦆 '+Math.ceil(player.shieldMs/1000)+'s';buffsEl.appendChild(c)}
 }
 
-// ====== 入力（相対ドラッグ） ======
+function reset(){
+  world.score=0;world.difficulty=1;world.speed=120;
+  player.x=W/2;player.y=H*0.82;player.hp=MAX_HP;player.ifr=0;player.fireCd=0;player.powerMs=0;player.shieldMs=0;
+  enemies.length=0;bullets.length=0;ebullets.length=0;particles.length=0;items.length=0;boss=null;
+  bossBar.style.display='none';stage=1;timeSinceStage=0;stageTransition=0;slowMo=0;shake=0;
+  updateHearts();updateScore();updateBuffs();t=0;last=performance.now();
+  itemTimer=5.25;shieldTimer=12;heartTimer=rand(HEART_CD[0],HEART_CD[1]);
+}
+
+// ====== 入力（相対ドラッグ＋開始の安全策） ======
 let dragging=false,lastTouchX=null;
 function onPointer(e){
   const p=e.touches?e.touches[0]:e;
@@ -178,49 +203,41 @@ cv.addEventListener('pointerdown', e=>{dragging=true;lastTouchX=null;onPointer(e
 cv.addEventListener('pointermove', e=>{if(dragging) onPointer(e)});
 addEventListener('pointerup', ()=>{dragging=false;lastTouchX=null});
 
-// ====== 星だけの背景 ======
-const starsFar = Array.from({length:70},()=>({x:Math.random(), y:Math.random(), s:R(0.4,1.0)}));
-const starsNear= Array.from({length:55},()=>({x:Math.random(), y:Math.random(), s:R(1.0,1.8)}));
-function drawBg(dt){
-  ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H);
-  // 遠景
-  ctx.globalAlpha=0.7; ctx.fillStyle='#0e2340';
-  for(const s of starsFar){ s.y += (world.speed*0.12*dt*s.s)/H; if(s.y>1) s.y-=1;
-    ctx.beginPath(); ctx.arc(s.x*W, s.y*H, 1.0*s.s, 0, Math.PI*2); ctx.fill(); }
-  // 近景（きらめき）
-  ctx.fillStyle='#cfe0ff';
-  for(const s of starsNear){ s.y += (world.speed*0.28*dt*s.s)/H; if(s.y>1) s.y-=1;
-    const tw = 0.65 + 0.35*Math.sin((t*6)+(s.x*17));
-    ctx.globalAlpha = 0.75*tw;
-    ctx.beginPath(); ctx.arc(s.x*W, s.y*H, 1.4*s.s, 0, Math.PI*2); ctx.fill(); }
-  ctx.globalAlpha=1;
-}
-
 // ====== スポーン ======
 let spawnTimer=0,itemTimer=5.25,shieldTimer=12,heartTimer=24;
 function spawnEnemy(){
-  enemies.push({x:R(30,W-30),y:-40,r:24,vx:R(-20,20),vy:R(70,110)+world.difficulty*8,hp:2+Math.floor(world.difficulty*0.3),fireCd:R(0.5,1.3),emoji:EMOJI.enemy[RI(0,2)]});
+  enemies.push({x:rand(30,W-30),y:-40,r:24,vx:rand(-20,20),vy:rand(70,110)+world.difficulty*8,hp:2+Math.floor(world.difficulty*0.3),fireCd:rand(0.5,1.3),emoji:EMOJI.enemy[randi(0,2)]});
 }
-function spawnPower(){ items.push({x:R(30,W-30),y:-30,r:18,vy:R(60,90),kind:'power'}) }
-function spawnShield(){ items.push({x:R(30,W-30),y:-30,r:20,vy:R(60,90),kind:'shield'}) }
-function spawnHeart(){ items.push({x:R(30,W-30),y:-30,r:18,vy:R(60,90),kind:'heal'}) }
+function spawnPower(){ items.push({x:rand(30,W-30),y:-30,r:18,vy:rand(60,90),kind:'power'}) }
+function spawnShield(){ items.push({x:rand(30,W-30),y:-30,r:20,vy:rand(60,90),kind:'shield'}) }
+function spawnHeart(){ items.push({x:rand(30,W-30),y:-30,r:18,vy:rand(60,90),kind:'heal'}) }
 
 function fire(x,y,vx,vy,from,extra={}){ bullets.push({x,y,vx,vy,r:from==='p'?18:16,from,...extra}); }
 function fireEnemy(x,y,vx,vy){ ebullets.push({x,y,vx,vy,r:16}); }
-function boom(x,y,n=10){ for(let i=0;i<n;i++) particles.push({x,y,vx:R(-80,80),vy:R(-120,0),t:0,life:R(0.3,0.6)}); }
+function boom(x,y,n=10){ for(let i=0;i<n;i++) particles.push({x,y,vx:rand(-80,80),vy:rand(-120,0),t:0,life:rand(0.3,0.6)}); }
 
 // ====== ボス ======
 function bossParamsFor(st){
-  // HPは元の2/3、サイズ2倍
-  if(st===1) return {hp:174,size:128,vx:80,vy:90,aimCD:0.7,burstCD:2.6,burstN:12,aimSp:230,burstSp:180};
-  if(st===2) return {hp:254,size:144,vx:110,vy:110,aimCD:0.55,burstCD:2.2,burstN:16,aimSp:260,burstSp:210};
-  return {hp:320,size:152,vx:120,vy:120,aimCD:0.5,burstCD:2.0,burstN:18,aimSp:280,burstSp:230};
+  if(st===1) return {hp:174,size:128,vx:80,vy:90,aimCD:0.7,burstCD:2.6,burstN:12,aimSp:230,burstSp:180, laserW:80, laserHold:1.1, laserCD:7.0};
+  if(st===2) return {hp:254,size:144,vx:110,vy:110,aimCD:0.55,burstCD:2.2,burstN:16,aimSp:260,burstSp:210, laserW:96, laserHold:1.2, laserCD:6.5};
+  return           {hp:320,size:152,vx:120,vy:120,aimCD:0.5, burstCD:2.0,burstN:18,aimSp:280,burstSp:230, laserW:112,laserHold:1.25,laserCD:6.0};
 }
 function spawnBoss(){
   const p=bossParamsFor(stage);
   boss={x:W/2,y:-p.size*1.2,r:p.size*0.62,hp:p.hp,maxHp:p.hp,vx:p.vx,vy:p.vy,
         aimCD:p.aimCD,burstCD:p.burstCD,burstN:p.burstN,aimSp:p.aimSp,burstSp:p.burstSp,
-        fireT:0,burstT:0,size:p.size};
+        fireT:0,burstT:0,size:p.size,
+        // レーザー関連
+        chargeT:2.0,        // 初回までの待機（2秒チャージ演出用に即開始させたいなら0でもOK）
+        laserCD:p.laserCD,  // クールダウン（経過で再チャージ）
+        laserTimer:rand(2.5,4.0), // 次レーザーまでの初期待ち
+        charging:false,     // 溜め中
+        chargeRemain:0,     // 溜め残り秒
+        laserActive:false,  // レーザー発射中
+        laserRemain:0,      // 発射残り秒
+        laserW:p.laserW,    // ビーム幅
+        laserHold:p.laserHold,
+  };
   bossBar.style.display='block'; updateBossBar();
 }
 function updateBossBar(){
@@ -238,30 +255,26 @@ function step(ts){
   let dt=Math.min(0.033,(now-last)/1000); last=now; t+=dt;
   if(state!==STATE.playing) return;
 
-  // スローモーション
   if(slowMo>0){ slowMo=Math.max(0,slowMo-dt); dt*=0.35; }
-
-  // ステージ時間（演出中は進めない）
   if(stageTransition>0){ stageTransition=Math.max(0,stageTransition-dt); }
   else { timeSinceStage += dt; }
 
   world.difficulty += dt*0.2;
   world.speed = 120 + world.difficulty*20;
 
-  // シェイク
-  if(shake>0){ shake=Math.max(0,shake-dt); ctx.save(); ctx.translate(R(-8,8)*shake*3,R(-8,8)*shake*3); }
+  if(shake>0){ shake=Math.max(0,shake-dt); ctx.save(); ctx.translate(rand(-8,8)*shake*3,rand(-8,8)*shake*3); }
 
   // 背景
   drawBg(dt);
 
-  // ★ ボス出現ゲート（演出中は出さない）
+  // ボス出現（演出中はゲート）
   if(!boss && stageTransition<=0 && timeSinceStage>BOSS_TIME) spawnBoss();
 
-  // アイテム
+  // アイテム（ボス中は新規出現停止）
   itemTimer-=dt; shieldTimer-=dt; heartTimer-=dt;
-  if(itemTimer<=0 && !boss){ spawnPower(); itemTimer=R(5.25,9.75); }  // ボス中は新規出現を止める
-  if(shieldTimer<=0 && !boss){ spawnShield(); shieldTimer=R(12,18); }
-  if(heartTimer<=0 && !boss){ spawnHeart(); heartTimer=R(HEART_CD[0], HEART_CD[1]); }
+  if(itemTimer<=0 && !boss){ spawnPower(); itemTimer=rand(5.25,9.75); }
+  if(shieldTimer<=0 && !boss){ spawnShield(); shieldTimer=rand(12,18); }
+  if(heartTimer<=0 && !boss){ spawnHeart(); heartTimer=rand(HEART_CD[0], HEART_CD[1]); }
 
   // プレイヤー状態
   player.fireCd-=dt;
@@ -270,7 +283,7 @@ function step(ts){
   if(player.ifr>0) player.ifr=Math.max(0,player.ifr-dt);
   updateBuffs();
 
-  // 自動射撃
+  // プレイヤー自動射撃
   if(player.fireCd<=0){
     if(player.powerMs>0){
       fire(player.x-14,player.y-28,0,-420,'p',{glow:true,dmg:2});
@@ -282,26 +295,25 @@ function step(ts){
     }
   }
 
-  // ★ 雑魚は「ボスが居ないときだけ」新規生成
+  // 雑魚：ボスが居ない時だけ新規生成／移動は常に
   spawnTimer-=dt;
   let baseInterval = Math.max(0.35, (1.1 - world.difficulty*0.08)/ENEMY_RATE);
   if(!boss && spawnTimer<=0){ spawnEnemy(); spawnTimer=baseInterval; }
-
-  // 雑魚の移動は常に継続（ボス出現前から残っている個体が自然に掃ける）
   for(let i=enemies.length-1;i>=0;i--){
     const e=enemies[i];
     e.x+=e.vx*dt; e.y+=e.vy*dt; if(e.x<22||e.x>W-22) e.vx*=-1;
     e.fireCd-=dt;
-    // 敵弾はボス中も撃つ（必要なら !boss を付けて止める）
-    if(e.fireCd<=0){ fireEnemy(e.x,e.y+16,0,R(140,220)+world.difficulty*12); e.fireCd=R(0.9,1.6)-world.difficulty*0.03; }
+    if(e.fireCd<=0){ fireEnemy(e.x,e.y+16,0,rand(140,220)+world.difficulty*12); e.fireCd=rand(0.9,1.6)-world.difficulty*0.03; }
     if(e.y>H+60){ enemies.splice(i,1); }
   }
 
-  // ボス
+  // ボスAI + 必殺レーザー
   if(boss){
     const ty=H*0.22;
     if(boss.y<ty){ boss.y+=boss.vy*dt; if(boss.y>ty) boss.y=ty; }
     boss.x+=boss.vx*dt; if(boss.x<40||boss.x>W-40) boss.vx*=-1;
+
+    // 通常弾
     boss.fireT-=dt; boss.burstT-=dt;
     if(boss.fireT<=0){
       const dx=player.x-boss.x, dy=player.y-boss.y, len=Math.hypot(dx,dy)||1;
@@ -313,6 +325,65 @@ function step(ts){
       const offset=(t*2)%(Math.PI*2)*(stage===3?0.6:stage===2?0.5:0.35);
       for(let k=0;k<n;k++){ const a=(Math.PI*2)*(k/n)+offset; fireEnemy(boss.x,boss.y+20,Math.cos(a)*sp,Math.sin(a)*sp); }
       boss.burstT=boss.burstCD;
+    }
+
+    // --- レーザー管理 ---
+    if(!boss.charging && !boss.laserActive){
+      boss.laserTimer -= dt;
+      if(boss.laserTimer<=0){
+        // 2秒チャージ開始
+        boss.charging = true;
+        boss.chargeRemain = 2.0;
+      }
+    }else if(boss.charging){
+      boss.chargeRemain -= dt;
+      // 視覚：ボス頭上の光球
+      const orbX=boss.x, orbY=boss.y-boss.r-24;
+      const prog = Math.max(0, 1 - boss.chargeRemain/2.0); // 0→1
+      ctx.save();
+      ctx.shadowColor='rgba(255,230,120,1)'; ctx.shadowBlur=28;
+      ctx.fillStyle='rgba(255,230,120,.85)';
+      circle(orbX, orbY, 10+prog*16, 'fill');
+      ctx.lineWidth=2; ctx.strokeStyle='rgba(255,250,200,.9)'; circle(orbX,orbY, 18+prog*14, 'stroke');
+      ctx.restore();
+
+      if(boss.chargeRemain<=0){
+        boss.charging=false;
+        boss.laserActive=true;
+        boss.laserRemain=boss.laserHold;
+        boss.laserX=boss.x; // 発射時点のXに固定
+        boss.laserTimer=boss.laserCD; // 次のレーザーまでのCD
+        // 演出：一瞬の白フラ
+        flashEl.style.transition='none'; flashEl.style.opacity='0.35'; setTimeout(()=>{flashEl.style.transition='opacity .25s'; flashEl.style.opacity='0';},20);
+      }
+    }else if(boss.laserActive){
+      boss.laserRemain -= dt;
+      // ビーム描画
+      const w = boss.laserW;
+      const g = ctx.createLinearGradient(boss.laserX, boss.y, boss.laserX, H);
+      g.addColorStop(0,'rgba(255,240,120,0.95)');
+      g.addColorStop(0.2,'rgba(255,210,90,0.8)');
+      g.addColorStop(1,'rgba(255,120,60,0.35)');
+      ctx.save();
+      ctx.globalCompositeOperation='lighter';
+      ctx.fillStyle=g;
+      ctx.fillRect(boss.laserX - w/2, boss.y, w, H-boss.y);
+      ctx.restore();
+
+      // 当たり判定（幅w内に入っていたら被弾）
+      const inBeam = Math.abs(player.x - boss.laserX) <= (w*0.5 - 6) && player.y > boss.y;
+      if(inBeam){
+        const invul=(player.shieldMs>0 || player.ifr>0);
+        if(!invul){
+          player.hp=Math.max(0,player.hp-1); updateHearts(); player.ifr=HIT_IFR;
+          shake=Math.max(shake,0.45); try{SND.hit.currentTime=0;SND.hit.play()}catch{}
+          if(player.hp<=0){ return gameOver(); }
+        }
+      }
+
+      if(boss.laserRemain<=0){
+        boss.laserActive=false;
+      }
     }
   }
 
@@ -340,21 +411,20 @@ function step(ts){
       if(hit({x:boss.x,y:boss.y,r:boss.r*1.05},b)){
         bullets.splice(j,1); boss.hp-=(b.dmg||1); updateBossBar();
         if(boss.hp<=0){
-          // 撃破演出：爆発／フラッシュ／スロー／シェイク／SE
-          for(let n=0;n<120;n++) particles.push({x:boss.x,y:boss.y,vx:R(-220,220),vy:R(-260,60),t:0,life:R(0.35,0.8)});
+          // 撃破演出
+          for(let n=0;n<120;n++) particles.push({x:boss.x,y:boss.y,vx:rand(-220,220),vy:rand(-260,60),t:0,life:rand(0.35,0.8)});
           flashEl.style.transition='none'; flashEl.style.opacity='0.9'; setTimeout(()=>{flashEl.style.transition='opacity .35s'; flashEl.style.opacity='0';},20);
           slowMo=1.4; shake=0.6;
           try{SND.bossDown.currentTime=0;SND.bossDown.play()}catch{}
           boss=null; bossBar.style.display='none';
-          // ★ 次ステージの計時をリセット＆演出ゲートON（即ボス化を防ぐ）
           timeSinceStage=0; stageTransition=1.4;
           setTimeout(()=>{
             if(stage<3){
               stage++;
               timeSinceStage=0;
-              enemies.length=0; ebullets.length=0; items.length=0; // 画面整理
+              enemies.length=0; ebullets.length=0; items.length=0;
               player.hp=MAX_HP; updateHearts(); showToast('STAGE '+stage,1600);
-              stageTransition=0; // ゲート解除（ここからザコ再開）
+              stageTransition=0;
             }else{
               state=STATE.clear; cancelAnimationFrame(raf); clearScoreEl.textContent='SCORE '+world.score; clearOv.style.display='';
             }
@@ -379,7 +449,7 @@ function step(ts){
     for(let i=ebullets.length-1;i>=0;i--){ const b=ebullets[i]; if(hit({x:player.x,y:player.y,r:player.r*0.72},b)) ebullets.splice(i,1); }
   }
 
-  // アイテム（ボス中に新規は出ないが、残っているものは拾える）
+  // アイテム（残っているものは拾える）
   for(let i=items.length-1;i>=0;i--){
     const it=items[i]; it.y+=80*dt;
     if(hit({x:player.x,y:player.y,r:player.r},{x:it.x,y:it.y,r:it.r})){
@@ -395,20 +465,9 @@ function step(ts){
   if(boss){ ctx.save(); ctx.shadowColor='rgba(255,60,60,.95)'; ctx.shadowBlur=25; drawEmoji(EMOJI.boss,boss.x,boss.y,boss.size); ctx.restore(); }
   for(const b of bullets){ const glowOn=(b.glow||player.powerMs>0)&&b.from==='p'; if(glowOn){ctx.save();ctx.shadowColor='yellow';ctx.shadowBlur=18;} drawEmoji(EMOJI.pBullet,b.x,b.y,28); if(glowOn)ctx.restore(); }
   for(const b of ebullets){ drawEmoji(EMOJI.eBullet,b.x,b.y,24); }
-  for(let i=particles.length-1;i>=0;i--){ const p=particles[i]; p.t+=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=120*dt; const a=1-p.t/p.life; if(a<=0){particles.splice(i,1);continue;} ctx.globalAlpha=Math.max(0,a); ctx.fillStyle='#7fe0ff'; ctx.beginPath(); ctx.arc(p.x,p.y,2,0,Math.PI*2); ctx.fill(); ctx.globalAlpha=1; }
+  for(let i=particles.length-1;i>=0;i--){ const p=particles[i]; p.t+=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=120*dt; const a=1-p.t/p.life; if(a<=0){particles.splice(i,1);continue;} ctx.globalAlpha=Math.max(0,a); ctx.fillStyle='#7fe0ff'; circle(p.x,p.y,2,'fill'); ctx.globalAlpha=1; }
 
-  // アイテム絵（🌺黄 / 🦆青 / ❤️赤）
-  for(const it of items){
-    ctx.save();
-    if(it.kind==='power'){ ctx.strokeStyle='rgba(255,230,0,.95)'; ctx.shadowColor='rgba(255,230,0,.9)'; }
-    else if(it.kind==='shield'){ ctx.strokeStyle='rgba(100,170,255,.95)'; ctx.shadowColor='rgba(100,170,255,.95)'; }
-    else { ctx.strokeStyle='rgba(255,80,80,.95)'; ctx.shadowColor='rgba(255,80,80,.95)'; }
-    ctx.lineWidth=3; ctx.shadowBlur=14; ctx.beginPath(); ctx.arc(it.x,it.y,it.r+6,0,Math.PI*2); ctx.stroke();
-    ctx.shadowBlur=0; drawEmoji(it.kind==='power'?EMOJI.power:(it.kind==='shield'?EMOJI.shield:EMOJI.heal), it.x, it.y, it.kind==='shield'?28:26);
-    ctx.restore();
-  }
-
-  // プレイヤー（無敵中は青グロー＋輪）
+  // プレイヤー描画（無敵中は青グロー＋輪）
   const blink=player.ifr>0 && Math.floor(t*20)%2===0;
   if(player.shieldMs>0){
     ctx.save(); ctx.shadowColor='rgba(120,180,255,1)'; ctx.shadowBlur=26; drawEmoji(EMOJI.player,player.x,player.y,42);
@@ -421,7 +480,8 @@ function step(ts){
 function loop(){ last=performance.now(); raf=requestAnimationFrame(step); }
 function start(){
   reset(); state=STATE.playing; startOv.style.display='none'; overOv.style.display='none'; clearOv.style.display='none';
-  try{ SND.ok.play().catch(()=>{}); SND.bgm.currentTime=0; SND.bgm.play().catch(()=>{}); }catch{}
+  // モバイルの再生ブロック対策：ユーザー操作直後に再生
+  try{ SND.ok.currentTime=0; SND.ok.play().catch(()=>{}); SND.bgm.currentTime=0; SND.bgm.play().catch(()=>{}); }catch{}
   loop();
 }
 function gameOver(){
@@ -431,15 +491,17 @@ function gameOver(){
   overOv.style.display='';
 }
 
-// ====== UI ======
-startBtn.addEventListener('click', ()=>start(), {passive:true});
-retryBtn?.addEventListener('click', ()=>start(), {passive:true});
-againBtn?.addEventListener('click', ()=>start(), {passive:true});
-resetBtn.addEventListener('click', ()=>{ if(state===STATE.playing||state===STATE.paused){ start(); }}, {passive:true});
-pauseBtn.addEventListener('click', ()=>{ if(state===STATE.playing){ state=STATE.paused; pauseBtn.textContent='▶'; SND.bgm.pause(); } else if(state===STATE.paused){ state=STATE.playing; last=performance.now(); pauseBtn.textContent='⏸︎'; SND.bgm.play().catch(()=>{}); } }, {passive:true});
+// ====== UI（クリック/タップ両対応 & 予備） ======
+function bindStartOnce(el){ el?.addEventListener('click', (e)=>{e.preventDefault(); start();}, {once:true}); el?.addEventListener('touchend', (e)=>{e.preventDefault(); start();}, {once:true, passive:false}); }
+bindStartOnce(document.getElementById('startBtn'));
+bindStartOnce(document.getElementById('startOv')); // 画面どこタップでも開始の保険
+retryBtn?.addEventListener('click', (e)=>{e.preventDefault(); start();}, {passive:false});
+againBtn?.addEventListener('click', (e)=>{e.preventDefault(); start();}, {passive:false});
+resetBtn.addEventListener('click', (e)=>{e.preventDefault(); if(state===STATE.playing||state===STATE.paused){ start(); }}, {passive:false});
+pauseBtn.addEventListener('click', (e)=>{e.preventDefault(); if(state===STATE.playing){ state=STATE.paused; pauseBtn.textContent='▶'; SND.bgm.pause(); } else if(state===STATE.paused){ state=STATE.playing; last=performance.now(); pauseBtn.textContent='⏸︎'; SND.bgm.play().catch(()=>{}); } }, {passive:false});
 
 // タイトル画面のアイドル描画
-function idle(){ if(state!==STATE.title) return; requestAnimationFrame(idle); const dt=1/60; drawBg(dt); ctx.globalAlpha=.85; drawEmoji(EMOJI.player,W/2,H*0.78,42); ctx.globalAlpha=1; }
+function idle(){ if(state!==STATE.title) return; requestAnimationFrame(idle); const dt=1/60; drawBg(dt); ctx.globalAlpha=.85; drawEmoji(EMOJI.player,innerWidth/2,innerHeight*0.78,42); ctx.globalAlpha=1; }
 idle();
 
 })();
