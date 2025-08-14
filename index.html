@@ -3,17 +3,19 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no"/>
-<title>👩 vs 🧑‍🦲 — STG（3ステージ／演出多め／雑魚常時・宇宙背景）</title>
+<title>👩 vs 🧑‍🦲 — STG（3ステージ／演出多め／星背景）</title>
 <style>
 :root{--ui:rgba(0,0,0,.55);--txt:#fff}
-html,body{margin:0;height:100%;background:#0b1020;color:var(--txt);font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Color Emoji","Apple Color Emoji","Segoe UI Emoji","Noto Emoji",sans-serif;touch-action:none;-webkit-user-select:none;user-select:none}
+html,body{margin:0;height:100%;background:#0b1020;color:var(--txt);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Color Emoji","Apple Color Emoji","Segoe UI Emoji","Noto Emoji",sans-serif;
+  touch-action:none;-webkit-user-select:none;user-select:none}
 #wrap{position:fixed;inset:0;display:grid;grid-template-rows:auto 1fr}
 #hud{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.5rem .75rem;background:var(--ui);backdrop-filter:blur(6px);z-index:10}
 #hud .g{display:flex;align-items:center;gap:.6rem}
 #score{font-weight:700;letter-spacing:.5px}
 #hearts{font-size:1.1rem}
 #btns button{appearance:none;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.1);color:#fff;padding:.35rem .6rem;border-radius:.75rem;font-weight:600}
-canvas{width:100%;height:100%;display:block;background:#060b18}
+canvas{width:100%;height:100%;display:block;background:#000}
 .ov{position:absolute;inset:0;display:grid;place-items:center;z-index:20}
 .panel{background:var(--ui);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.15);border-radius:1rem;padding:1rem 1.2rem;width:min(92vw,560px);box-shadow:0 10px 30px rgba(0,0,0,.4)}
 .panel h1{margin:.2rem 0 .5rem;font-size:1.1rem}
@@ -48,7 +50,7 @@ canvas{width:100%;height:100%;display:block;background:#060b18}
 
   <div id="startOv" class="ov">
     <div class="panel">
-      <h1>👩 vs 🧑‍🦲 縦スクSTG（3面・演出多め）</h1>
+      <h1>👩 vs 🧑‍🦲 縦スクSTG（3面・演出多め・星背景）</h1>
       <p>操作：相対ドラッグで左右。攻撃は<b>👹</b>自動連射。</p>
       <p>アイテム：<b>🌺</b>=火力UP、<b>🦆</b>=無敵（青グロー）、<b>❤️</b>=HP+1。</p>
       <p>各面<b>45秒</b>で巨大赤オーラ<b>👴</b>出現。倒すと次面、<b>HP満タン</b>で再開。3面クリアでGAME COMPLETE。</p>
@@ -79,13 +81,13 @@ canvas{width:100%;height:100%;display:block;background:#060b18}
 // ====== 設定 ======
 const AUDIO_BASE = "https://github.com/raterateeeee/shooting_hage/raw/refs/heads/main/sounds/";
 const DPR = Math.max(1, Math.min(2, window.devicePixelRatio||1));
-const MAX_HP = 4;               // 満タン値（面開始時に全回復）
+const MAX_HP = 4;               // 面開始時は全回復
 const BOSS_TIME = 45;           // ボス出現秒
-const HIT_IFR = 1.5;            // 被弾後の無敵
-const POWER_MS = 5000;          // 🌺
-const SHIELD_MS = 5000;         // 🦆
+const HIT_IFR = 1.5;            // 被弾後の無敵秒
+const POWER_MS = 5000;          // 🌺 火力UP
+const SHIELD_MS = 5000;         // 🦆 無敵
 const HEART_CD = [20,28];       // ❤️ 出現間隔（秒）
-const ENEMY_RATE = 1.0;         // 雑魚の湧き基準（boss中は自動で間隔を延ばす）
+const ENEMY_RATE = 1.0;         // 雑魚の湧き基準（ボス中は自動で間隔↑）
 
 // ====== 参照 ======
 const cv = document.getElementById('cv');
@@ -184,38 +186,22 @@ cv.addEventListener('pointerdown', e=>{dragging=true;lastTouchX=null;onPointer(e
 cv.addEventListener('pointermove', e=>{if(dragging) onPointer(e)});
 addEventListener('pointerup', ()=>{dragging=false;lastTouchX=null});
 
-// ====== 宇宙背景（パララックス） ======
-const starsFar = Array.from({length:60},()=>({x:Math.random(), y:Math.random(), s:R(0.4,1.0)}));
-const starsNear= Array.from({length:40},()=>({x:Math.random(), y:Math.random(), s:R(1.0,1.8)}));
-const comets    = Array.from({length:6}, ()=>({x:Math.random(), y:Math.random(), vx:R(-0.02,0.02), vy:R(0.15,0.25), life:R(4,8)}));
+// ====== 星だけの宇宙背景（遠景/近景のドット） ======
+const starsFar = Array.from({length:70},()=>({x:Math.random(), y:Math.random(), s:R(0.4,1.0)}));
+const starsNear= Array.from({length:55},()=>({x:Math.random(), y:Math.random(), s:R(1.0,1.8)}));
 function drawBg(dt){
-  // 漂う青い雲
-  const g = ctx.createLinearGradient(0,0,0,H);
-  g.addColorStop(0,'#081229'); g.addColorStop(1,'#0b1020');
-  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
-
-  // 遠景の星
-  ctx.globalAlpha=0.9; ctx.fillStyle='#0f2a44';
-  for(const s of starsFar){ s.y += (world.speed*0.15*dt*s.s)/H; if(s.y>1) s.y-=1;
+  ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H);
+  // 遠景
+  ctx.globalAlpha=0.7; ctx.fillStyle='#0e2340';
+  for(const s of starsFar){ s.y += (world.speed*0.12*dt*s.s)/H; if(s.y>1) s.y-=1;
     ctx.beginPath(); ctx.arc(s.x*W, s.y*H, 1.0*s.s, 0, Math.PI*2); ctx.fill(); }
-
-  // 近景の星（きらめき）
-  ctx.fillStyle='#bcd7ff';
-  for(const s of starsNear){ s.y += (world.speed*0.35*dt*s.s)/H; if(s.y>1) s.y-=1;
-    const tw = 0.6 + 0.4*Math.sin((t*6)+(s.x*17));
-    ctx.globalAlpha = 0.7*tw;
+  // 近景（きらめき）
+  ctx.fillStyle='#cfe0ff';
+  for(const s of starsNear){ s.y += (world.speed*0.28*dt*s.s)/H; if(s.y>1) s.y-=1;
+    const tw = 0.65 + 0.35*Math.sin((t*6)+(s.x*17));
+    ctx.globalAlpha = 0.75*tw;
     ctx.beginPath(); ctx.arc(s.x*W, s.y*H, 1.4*s.s, 0, Math.PI*2); ctx.fill(); }
   ctx.globalAlpha=1;
-
-  // 彗星
-  ctx.strokeStyle='rgba(160,200,255,.55)'; ctx.lineWidth=1.5;
-  for(const c of comets){
-    c.x += c.vx; c.y += c.vy*dt*60;
-    if(c.y>1.2){ c.x=Math.random(); c.y=-0.2; c.vx=R(-0.02,0.02); c.vy=R(0.15,0.25); c.life=R(4,8); }
-    ctx.beginPath(); ctx.moveTo(c.x*W, c.y*H);
-    ctx.lineTo(c.x*W-12*c.vx*W, c.y*H-12*c.vy*H);
-    ctx.stroke();
-  }
 }
 
 // ====== スポーン ======
@@ -251,11 +237,9 @@ function updateBossBar(){
   bossFill.style.width=(ratio*100)+'%';
   bossLabel.textContent=`BOSS HP ${Math.ceil(boss.hp)}/${boss.maxHp} (STAGE ${stage})`;
 }
-
-// ====== トースト ======
 function showToast(msg,ms=1400){ toast.textContent=msg; toast.style.display='block'; setTimeout(()=>toast.style.display='none',ms); }
 
-// ====== ループ ======
+// ====== メインループ ======
 function step(ts){
   raf=requestAnimationFrame(step);
   const now=ts||performance.now();
@@ -266,32 +250,35 @@ function step(ts){
   if(slowMo>0){ slowMo=Math.max(0,slowMo-dt); dt*=0.35; }
 
   // ステージ時間（演出中は進めない）
-  if(stageTransition>0){ stageTransition = Math.max(0, stageTransition-dt); }
+  if(stageTransition>0){ stageTransition=Math.max(0,stageTransition-dt); }
   else { timeSinceStage += dt; }
 
   world.difficulty += dt*0.2;
   world.speed = 120 + world.difficulty*20;
 
-  // 画面シェイク
+  // シェイク
   if(shake>0){ shake=Math.max(0,shake-dt); ctx.save(); ctx.translate(R(-8,8)*shake*3,R(-8,8)*shake*3); }
+
+  // 背景
   drawBg(dt);
 
   // ★ ボス出現ゲート（演出中は出さない）
   if(!boss && stageTransition<=0 && timeSinceStage>BOSS_TIME) spawnBoss();
 
-  // アイテムスポーン
+  // アイテム
   itemTimer-=dt; shieldTimer-=dt; heartTimer-=dt;
   if(itemTimer<=0){ spawnPower(); itemTimer=R(5.25,9.75); }
   if(shieldTimer<=0){ spawnShield(); shieldTimer=R(12,18); }
   if(heartTimer<=0){ spawnHeart(); heartTimer=R(HEART_CD[0], HEART_CD[1]); }
 
-  // プレイヤー弾
+  // プレイヤー状態
   player.fireCd-=dt;
   if(player.powerMs>0) player.powerMs=Math.max(0,player.powerMs-dt*1000);
   if(player.shieldMs>0) player.shieldMs=Math.max(0,player.shieldMs-dt*1000);
   if(player.ifr>0) player.ifr=Math.max(0,player.ifr-dt);
   updateBuffs();
 
+  // 自動射撃
   if(player.fireCd<=0){
     if(player.powerMs>0){
       fire(player.x-14,player.y-28,0,-420,'p',{glow:true,dmg:2});
@@ -303,10 +290,10 @@ function step(ts){
     }
   }
 
-  // ★ 雑魚：ボス中も「継続」して流れる（ただし湧き間隔は少し長く）
+  // ★ 雑魚は常時（ボス中も）流れる。ボス中は湧き間隔を少し延ばす
   spawnTimer-=dt;
   let baseInterval = Math.max(0.35, (1.1 - world.difficulty*0.08)/ENEMY_RATE);
-  if(boss) baseInterval *= 1.6;  // ボス中は控えめ
+  if(boss) baseInterval *= 1.6;
   if(spawnTimer<=0){ spawnEnemy(); spawnTimer=baseInterval; }
   for(let i=enemies.length-1;i>=0;i--){
     const e=enemies[i];
@@ -316,7 +303,7 @@ function step(ts){
     if(e.y>H+60){ enemies.splice(i,1); }
   }
 
-  // ボスAI
+  // ボス
   if(boss){
     const ty=H*0.22;
     if(boss.y<ty){ boss.y+=boss.vy*dt; if(boss.y>ty) boss.y=ty; }
@@ -365,17 +352,15 @@ function step(ts){
           slowMo=1.4; shake=0.6;
           try{SND.bossDown.currentTime=0;SND.bossDown.play()}catch{}
           boss=null; bossBar.style.display='none';
-          // ★ 次ステージ計時をリセット＆演出ゲートON
-          timeSinceStage=0;
-          stageTransition=1.4;
-          // 1.2秒余韻 → 次へ
+          // ★ 次ステージの計時をリセット＆演出ゲートON（即ボス化を防ぐ）
+          timeSinceStage=0; stageTransition=1.4;
           setTimeout(()=>{
             if(stage<3){
               stage++;
               timeSinceStage=0;
-              enemies.length=0; ebullets.length=0; items.length=0; // 画面整理（雑魚は次面から再開）
+              enemies.length=0; ebullets.length=0; items.length=0; // 画面整理
               player.hp=MAX_HP; updateHearts(); showToast('STAGE '+stage,1600);
-              stageTransition=0; // ★ ゲート解除
+              stageTransition=0; // ゲート解除
             }else{
               state=STATE.clear; cancelAnimationFrame(raf); clearScoreEl.textContent='SCORE '+world.score; clearOv.style.display='';
             }
