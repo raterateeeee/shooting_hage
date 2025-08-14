@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no"/>
-<title>👩 vs 🧑‍🦲 — STG（3ステージ／演出多め／星背景）</title>
+<title>👩 vs 🧑‍🦲 — STG（3ステージ／演出多め／星背景・ボス中ザコ停止）</title>
 <style>
 :root{--ui:rgba(0,0,0,.55);--txt:#fff}
 html,body{margin:0;height:100%;background:#0b1020;color:var(--txt);
@@ -37,11 +37,12 @@ canvas{width:100%;height:100%;display:block;background:#000}
   <div id="hud">
     <div class="g"><span>👩</span><span id="score">SCORE 0</span></div>
     <div class="g"><span id="hearts">❤️❤️❤️❤️</span></div>
-    <div id="btns" class="g">
+    <div class="g" id="btns">
       <button id="pauseBtn" aria-label="一時停止/再開">⏸︎</button>
       <button id="resetBtn" aria-label="リセット">↺</button>
     </div>
   </div>
+
   <div id="bossbar"><div class="fill"></div><div class="label">BOSS HP</div></div>
   <div id="toast">STAGE 2</div>
   <div id="buffs"></div>
@@ -87,7 +88,7 @@ const HIT_IFR = 1.5;            // 被弾後の無敵秒
 const POWER_MS = 5000;          // 🌺 火力UP
 const SHIELD_MS = 5000;         // 🦆 無敵
 const HEART_CD = [20,28];       // ❤️ 出現間隔（秒）
-const ENEMY_RATE = 1.0;         // 雑魚の湧き基準（ボス中は自動で間隔↑）
+const ENEMY_RATE = 1.0;         // 雑魚湧き基準
 
 // ====== 参照 ======
 const cv = document.getElementById('cv');
@@ -137,7 +138,7 @@ const player={x:0,y:0,r:22,hp:MAX_HP,ifr:0,fireCd:0,fireBase:0.22,powerMs:0,shie
 const enemies=[], bullets=[], ebullets=[], particles=[], items=[];
 let boss=null, stage=1, timeSinceStage=0, stageTransition=0, slowMo=0, shake=0;
 
-// ====== ユーティリティ ======
+// ====== ユーティリティ／描画 ======
 const R=(a,b)=>a+Math.random()*(b-a);
 const RI=(a,b)=>(a+Math.floor(Math.random()*((b-a)+1)));
 const hit=(a,b)=>{const dx=a.x-b.x,dy=a.y-b.y;const rr=(a.r+b.r);return dx*dx+dy*dy<=rr*rr;};
@@ -161,15 +162,6 @@ function updateBuffs(){
   if(player.shieldMs>0){const c=document.createElement('div');c.className='chip';c.textContent='🦆 '+Math.ceil(player.shieldMs/1000)+'s';buffsEl.appendChild(c)}
 }
 
-function reset(){
-  world.score=0;world.difficulty=1;world.speed=120;
-  player.x=W/2;player.y=H*0.82;player.hp=MAX_HP;player.ifr=0;player.fireCd=0;player.powerMs=0;player.shieldMs=0;
-  enemies.length=0;bullets.length=0;ebullets.length=0;particles.length=0;items.length=0;boss=null;
-  bossBar.style.display='none';stage=1;timeSinceStage=0;stageTransition=0;slowMo=0;shake=0;
-  updateHearts();updateScore();updateBuffs();t=0;last=performance.now();
-  itemTimer=5.25;shieldTimer=12;heartTimer=R(HEART_CD[0],HEART_CD[1]);
-}
-
 // ====== 入力（相対ドラッグ） ======
 let dragging=false,lastTouchX=null;
 function onPointer(e){
@@ -186,7 +178,7 @@ cv.addEventListener('pointerdown', e=>{dragging=true;lastTouchX=null;onPointer(e
 cv.addEventListener('pointermove', e=>{if(dragging) onPointer(e)});
 addEventListener('pointerup', ()=>{dragging=false;lastTouchX=null});
 
-// ====== 星だけの宇宙背景（遠景/近景のドット） ======
+// ====== 星だけの背景 ======
 const starsFar = Array.from({length:70},()=>({x:Math.random(), y:Math.random(), s:R(0.4,1.0)}));
 const starsNear= Array.from({length:55},()=>({x:Math.random(), y:Math.random(), s:R(1.0,1.8)}));
 function drawBg(dt){
@@ -267,9 +259,9 @@ function step(ts){
 
   // アイテム
   itemTimer-=dt; shieldTimer-=dt; heartTimer-=dt;
-  if(itemTimer<=0){ spawnPower(); itemTimer=R(5.25,9.75); }
-  if(shieldTimer<=0){ spawnShield(); shieldTimer=R(12,18); }
-  if(heartTimer<=0){ spawnHeart(); heartTimer=R(HEART_CD[0], HEART_CD[1]); }
+  if(itemTimer<=0 && !boss){ spawnPower(); itemTimer=R(5.25,9.75); }  // ボス中は新規出現を止める
+  if(shieldTimer<=0 && !boss){ spawnShield(); shieldTimer=R(12,18); }
+  if(heartTimer<=0 && !boss){ spawnHeart(); heartTimer=R(HEART_CD[0], HEART_CD[1]); }
 
   // プレイヤー状態
   player.fireCd-=dt;
@@ -290,15 +282,17 @@ function step(ts){
     }
   }
 
-  // ★ 雑魚は常時（ボス中も）流れる。ボス中は湧き間隔を少し延ばす
+  // ★ 雑魚は「ボスが居ないときだけ」新規生成
   spawnTimer-=dt;
   let baseInterval = Math.max(0.35, (1.1 - world.difficulty*0.08)/ENEMY_RATE);
-  if(boss) baseInterval *= 1.6;
-  if(spawnTimer<=0){ spawnEnemy(); spawnTimer=baseInterval; }
+  if(!boss && spawnTimer<=0){ spawnEnemy(); spawnTimer=baseInterval; }
+
+  // 雑魚の移動は常に継続（ボス出現前から残っている個体が自然に掃ける）
   for(let i=enemies.length-1;i>=0;i--){
     const e=enemies[i];
     e.x+=e.vx*dt; e.y+=e.vy*dt; if(e.x<22||e.x>W-22) e.vx*=-1;
     e.fireCd-=dt;
+    // 敵弾はボス中も撃つ（必要なら !boss を付けて止める）
     if(e.fireCd<=0){ fireEnemy(e.x,e.y+16,0,R(140,220)+world.difficulty*12); e.fireCd=R(0.9,1.6)-world.difficulty*0.03; }
     if(e.y>H+60){ enemies.splice(i,1); }
   }
@@ -360,7 +354,7 @@ function step(ts){
               timeSinceStage=0;
               enemies.length=0; ebullets.length=0; items.length=0; // 画面整理
               player.hp=MAX_HP; updateHearts(); showToast('STAGE '+stage,1600);
-              stageTransition=0; // ゲート解除
+              stageTransition=0; // ゲート解除（ここからザコ再開）
             }else{
               state=STATE.clear; cancelAnimationFrame(raf); clearScoreEl.textContent='SCORE '+world.score; clearOv.style.display='';
             }
@@ -385,7 +379,7 @@ function step(ts){
     for(let i=ebullets.length-1;i>=0;i--){ const b=ebullets[i]; if(hit({x:player.x,y:player.y,r:player.r*0.72},b)) ebullets.splice(i,1); }
   }
 
-  // アイテム
+  // アイテム（ボス中に新規は出ないが、残っているものは拾える）
   for(let i=items.length-1;i>=0;i--){
     const it=items[i]; it.y+=80*dt;
     if(hit({x:player.x,y:player.y,r:player.r},{x:it.x,y:it.y,r:it.r})){
